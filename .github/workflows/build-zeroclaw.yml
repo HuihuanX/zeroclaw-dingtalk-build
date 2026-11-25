@@ -1,0 +1,61 @@
+name: Build ZeroClaw (DingTalk)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "ZeroClaw Release Tag (例如 v0.9.0)"
+        required: true
+        default: "v0.9.0"
+        type: string
+
+jobs:
+  build-linux-x86_64:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: 1. 拉取 ZeroClaw 指定版本源码
+        uses: actions/checkout@v4
+        with:
+          repository: zeroclaw-labs/zeroclaw
+          ref: ${{ inputs.tag }}
+          fetch-depth: 1
+
+      - name: 2. 安装构建依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y build-essential pkg-config
+
+      - name: 3. 安装官方指定版本 Rust 工具链
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: "1.98.0"
+
+      - name: 4. 启用 Rust 编译缓存（加速后续升级构建）
+        uses: Swatinem/rust-cache@v2
+
+      - name: 5. 编译 ZeroClaw（开启 channel-dingtalk 特性）
+        run: |
+          cargo build --profile ci --locked --features channel-dingtalk
+
+      - name: 6. 校验二进制并打包
+        run: |
+          BIN="target/ci/zeroclaw"
+          chmod +x "$BIN"
+          "$BIN" --version
+          ls -lh "$BIN"
+          ldd "$BIN"
+          mkdir -p dist
+          cp "$BIN" dist/zeroclaw
+          tar -czf "zeroclaw-${{ inputs.tag }}-dingtalk-x86_64-linux-gnu.tar.gz" -C dist zeroclaw
+          sha256sum "zeroclaw-${{ inputs.tag }}-dingtalk-x86_64-linux-gnu.tar.gz" > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: 7. 上传构建产物供下载
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeroclaw-${{ inputs.tag }}-dingtalk-linux-x86_64
+          path: |
+            zeroclaw-${{ inputs.tag }}-dingtalk-x86_64-linux-gnu.tar.gz
+            SHA256SUMS
+          retention-days: 30
